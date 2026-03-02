@@ -26,11 +26,77 @@ function Intro() {
 const DEFAULT_USER_COLOR = "#06D6A0"; // not shown in the palette
 const PALETTE = ["#FF6B6B", "#FFD166", "#4CC9F0", "#F72585", "#F4A261", "#43AA8B", "#F77F00"]; // curated
 
+function ProfileSetupModal({
+  open,
+  fullName,
+  setFullName,
+  selectedColor,
+  setSelectedColor,
+  colors,
+  saving,
+  error,
+  onSave,
+}: {
+  open: boolean;
+  fullName: string;
+  setFullName: (value: string) => void;
+  selectedColor: string;
+  setSelectedColor: (value: string) => void;
+  colors: string[];
+  saving: boolean;
+  error: string | null;
+  onSave: () => Promise<void>;
+}) {
+  if (!open) return null;
+  return (
+    <div className="modal">
+      <div className="modal-card">
+        <h3 className="modal-title">Complete Your Profile</h3>
+        <div className="muted">New collaborator detected. Please add your details to continue.</div>
+
+        <label className="label">Full Name</label>
+        <input
+          className="input"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          placeholder="Enter your full name"
+        />
+
+        <label className="label">Choose Your Color</label>
+        <div className="palette" style={{ marginTop: 6 }}>
+          {colors.map((c) => (
+            <button
+              key={c}
+              className={`swatch${selectedColor === c ? " selected" : ""}`}
+              style={{ background: c }}
+              onClick={() => setSelectedColor(c)}
+              aria-label={`Pick ${c}`}
+            />
+          ))}
+        </div>
+
+        {error ? <div className="muted" style={{ marginTop: 10, color: "#ef476f" }}>{error}</div> : null}
+
+        <div className="actions" style={{ marginTop: 16 }}>
+          <button className="btn btn-primary" onClick={onSave} disabled={saving}>
+            {saving ? "Saving..." : "Continue"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [uid, setUid] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [userColor, setUserColor] = useState(DEFAULT_USER_COLOR);
+  const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [pendingColor, setPendingColor] = useState(PALETTE[0]);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">(
     (localStorage.getItem("theme") as "dark" | "light") || "dark"
   );
@@ -49,10 +115,22 @@ export default function App() {
       if (u?.id) {
         const { data: prof } = await supabase
           .from("profiles")
-          .select("color")
+          .select("full_name, color")
           .eq("id", u.id)
           .maybeSingle();
-        if (prof?.color) setUserColor(prof.color);
+        const hasProfile = Boolean(prof?.full_name && prof?.color);
+        if (hasProfile) {
+          if (prof?.color) setUserColor(prof.color);
+          setNeedsProfileSetup(false);
+        } else {
+          setFullName(((u.user_metadata as any)?.full_name as string) || "");
+          setPendingColor(PALETTE[0]);
+          setNeedsProfileSetup(true);
+        }
+
+        if (window.location.pathname === "/callback") {
+          window.history.replaceState({}, "", "/");
+        }
       }
       setReady(true);
     })();
@@ -90,11 +168,68 @@ export default function App() {
     window.dispatchEvent(new CustomEvent("tasks:refresh"));
   }
 
+  async function saveProfile() {
+    if (!uid || !email) return;
+    const cleanName = fullName.trim();
+    if (!cleanName) {
+      setProfileError("Please enter your full name.");
+      return;
+    }
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      const { data: clash } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("color", pendingColor)
+        .neq("id", uid);
+      if (clash && clash.length > 0) {
+        setProfileError("This color is already in use. Please choose another one.");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: uid,
+            email,
+            full_name: cleanName,
+            color: pendingColor,
+          },
+          { onConflict: "id" }
+        )
+        .select();
+      if (error) {
+        setProfileError(error.message || "Failed to save profile.");
+        return;
+      }
+
+      setUserColor(pendingColor);
+      setNeedsProfileSetup(false);
+      window.dispatchEvent(new CustomEvent("tasks:refresh"));
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
   if (!ready) return <div className="page-pad">Loading…</div>;
   if (!email) return <Intro />;
 
   return (
     <div className="page-pad">
+      <ProfileSetupModal
+        open={needsProfileSetup}
+        fullName={fullName}
+        setFullName={setFullName}
+        selectedColor={pendingColor}
+        setSelectedColor={setPendingColor}
+        colors={PALETTE}
+        saving={profileSaving}
+        error={profileError}
+        onSave={saveProfile}
+      />
+
       <header className="topbar">
         <div className="left">
           <span className="chip">Company</span>
@@ -133,7 +268,9 @@ export default function App() {
         </div>
       </header>
 
-      <KanbanBoard stickyColor={userColor} currentUserId={uid!} />
+      {!needsProfileSetup ? (
+        <KanbanBoard stickyColor={userColor} currentUserId={uid!} />
+      ) : null}
     </div>
   );
 }
