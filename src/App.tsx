@@ -169,7 +169,7 @@ export default function App() {
   }
 
   async function saveProfile() {
-    if (!uid || !email) return;
+    if (!uid) return;
     const cleanName = fullName.trim();
     if (!cleanName) {
       setProfileError("Please enter your full name.");
@@ -188,20 +188,47 @@ export default function App() {
         return;
       }
 
-      const { error } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: uid,
-            email,
-            full_name: cleanName,
-            color: pendingColor,
-          },
-          { onConflict: "id" }
-        )
-        .select();
-      if (error) {
-        setProfileError(error.message || "Failed to save profile.");
+      const attemptLimit = 6;
+      let lastError: { message?: string; code?: string } | null = null;
+
+      for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
+        const { data: authData } = await supabase.auth.getUser();
+        const freshUser = authData.user;
+        const idToUse = freshUser?.id || uid;
+        const emailToUse = freshUser?.email ?? email ?? null;
+
+        const { error } = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: idToUse,
+              email: emailToUse,
+              full_name: cleanName,
+              color: pendingColor,
+            },
+            { onConflict: "id" }
+          )
+          .select();
+
+        if (!error) {
+          lastError = null;
+          break;
+        }
+
+        lastError = { message: error.message, code: (error as any).code };
+        const isProfileForeignKeyIssue =
+          error.message?.includes("profiles_id_fkey") ||
+          (error as any).code === "23503";
+
+        if (!isProfileForeignKeyIssue || attempt === attemptLimit) break;
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+
+      if (lastError) {
+        setProfileError(
+          lastError.message ||
+            "Failed to save profile. Please wait a moment and try again."
+        );
         return;
       }
 
