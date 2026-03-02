@@ -181,7 +181,10 @@ export default function KanbanBoard({
           : t
       )
     );
-    const success = await persistTaskPatch(id, patch);
+    let success = await persistTaskPatch(id, patch);
+    if (!success) {
+      success = await persistTaskPatch(id, { status: to });
+    }
     if (success) {
       window.dispatchEvent(new CustomEvent("tasks:refresh"));
     } else {
@@ -264,11 +267,14 @@ export default function KanbanBoard({
       ...nextColumns.done,
     ]);
 
-    const statusSaved = await persistTaskPatch(draggableId, {
+    let statusSaved = await persistTaskPatch(draggableId, {
       status: toCol,
       sticky_color: moved.sticky_color,
       assigned_to: moved.assigned_to ?? null,
     });
+    if (!statusSaved) {
+      statusSaved = await persistTaskPatch(draggableId, { status: toCol });
+    }
     if (!statusSaved) {
       await fetchTasks();
       return;
