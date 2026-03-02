@@ -29,7 +29,11 @@ export default function TaskModal({ isOpen, onClose, task }: TaskModalProps) {
     if (task) {
       setTitle(task.title ?? "");
       setPriority((task.priority as any) ?? "Medium");
-      setStatus(task.status ?? "todo");
+      setStatus(
+        ((task.status as unknown) === "in progress"
+          ? "in_progress"
+          : task.status) ?? "todo"
+      );
       setDescription(task.description ?? "");
     } else {
       setTitle(""); setPriority("Medium"); setStatus("todo"); setDescription("");
@@ -50,11 +54,20 @@ export default function TaskModal({ isOpen, onClose, task }: TaskModalProps) {
           priority, status,
         };
         if (status === "todo") { patch.sticky_color = TODO_COLOR; patch.assigned_to = null; }
-        const { error } = await supabase
+        const payload: Record<string, unknown> = {
+          ...patch,
+          status: status === "in_progress" ? "in_progress" : status,
+        };
+        let { error } = await supabase
           .from("tasks")
-          .update(patch)
-          .eq("id", task.id)
-          .select();
+          .update(payload)
+          .eq("id", task.id);
+        if (error && status === "in_progress") {
+          ({ error } = await supabase
+            .from("tasks")
+            .update({ ...payload, status: "in progress" })
+            .eq("id", task.id));
+        }
         if (error) throw error;
       } else {
         const { data: s } = await supabase.auth.getSession();

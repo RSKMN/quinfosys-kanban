@@ -24,6 +24,22 @@ type Profile = {
   color: string | null;
 };
 
+type UiStatus = Task["status"];
+type DbStatus = UiStatus | "in progress";
+
+function normalizeStatus(status: unknown): UiStatus {
+  if (status === "in progress") return "in_progress";
+  if (status === "todo" || status === "in_progress" || status === "done") {
+    return status;
+  }
+  return "todo";
+}
+
+function toDbStatus(status: UiStatus, legacyInProgress = false): DbStatus {
+  if (status === "in_progress" && legacyInProgress) return "in progress";
+  return status;
+}
+
 export default function KanbanBoard({
   stickyColor,
   currentUserId,
@@ -53,7 +69,12 @@ export default function KanbanBoard({
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
     if (error) console.error("fetchTasks error", error);
-    setTasks((data as Task[]) ?? []);
+    setTasks(
+      ((data as Task[]) ?? []).map((task) => ({
+        ...task,
+        status: normalizeStatus((task as { status?: unknown }).status),
+      }))
+    );
     setLoading(false);
   }
 
@@ -95,16 +116,34 @@ export default function KanbanBoard({
   }
 
   async function persistTaskPatch(id: string, patch: Partial<Task>) {
-    const { error } = await supabase
+    const payload: Record<string, unknown> = {
+      ...patch,
+      status: patch.status ? toDbStatus(patch.status) : undefined,
+    };
+
+    const { error: primaryError } = await supabase
       .from("tasks")
-      .update(patch)
-      .eq("id", id)
-      .select();
-    if (error) {
-      console.error("persistTaskPatch error", error);
+      .update(payload)
+      .eq("id", id);
+
+    if (!primaryError) return true;
+
+    if (patch.status === "in_progress") {
+      const legacyPayload: Record<string, unknown> = {
+        ...payload,
+        status: toDbStatus("in_progress", true),
+      };
+      const { error: legacyError } = await supabase
+        .from("tasks")
+        .update(legacyPayload)
+        .eq("id", id);
+      if (!legacyError) return true;
+      console.error("persistTaskPatch error", legacyError);
       return false;
     }
-    return true;
+
+    console.error("persistTaskPatch error", primaryError);
+    return false;
   }
   async function persistPositions(items: Task[]) {
     const updates = items.map((t, idx) => ({ id: t.id, position: idx }));
@@ -225,11 +264,15 @@ export default function KanbanBoard({
       ...nextColumns.done,
     ]);
 
-    await persistTaskPatch(draggableId, {
+    const statusSaved = await persistTaskPatch(draggableId, {
       status: toCol,
       sticky_color: moved.sticky_color,
       assigned_to: moved.assigned_to ?? null,
     });
+    if (!statusSaved) {
+      await fetchTasks();
+      return;
+    }
     await persistPositions(nextColumns[fromCol]);
     if (fromCol !== toCol) await persistPositions(nextColumns[toCol]);
     window.dispatchEvent(new CustomEvent("tasks:refresh"));
