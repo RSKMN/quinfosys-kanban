@@ -96,7 +96,11 @@ export default function KanbanBoard({
 
   async function persistTaskPatch(id: string, patch: Partial<Task>) {
     const { error } = await supabase.from("tasks").update(patch).eq("id", id);
-    if (error) console.error("persistTaskPatch error", error);
+    if (error) {
+      console.error("persistTaskPatch error", error);
+      return false;
+    }
+    return true;
   }
   async function persistPositions(items: Task[]) {
     const updates = items.map((t, idx) => ({ id: t.id, position: idx }));
@@ -133,8 +137,13 @@ export default function KanbanBoard({
           : t
       )
     );
-    await persistTaskPatch(id, patch);
-    window.dispatchEvent(new CustomEvent("tasks:refresh"));
+    const success = await persistTaskPatch(id, patch);
+    if (success) {
+      window.dispatchEvent(new CustomEvent("tasks:refresh"));
+    } else {
+      // Revert local state if update failed
+      await fetchTasks();
+    }
   }
 
   function localMove(
