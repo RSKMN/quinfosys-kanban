@@ -113,6 +113,7 @@ export default function KanbanBoard({
   }
 
   async function moveTo(id: string, to: Status) {
+    if (!id) return;
     const patch: Partial<Task> = { status: to };
     if (to === "todo") {
       patch.sticky_color = TODO_COLOR;
@@ -122,6 +123,16 @@ export default function KanbanBoard({
       patch.sticky_color = stickyColor;
       patch.assigned_to = currentUserId;
     }
+    if (to === "done") {
+      patch.assigned_to = currentUserId;
+    }
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? { ...t, status: to, ...patch }
+          : t
+      )
+    );
     await persistTaskPatch(id, patch);
     window.dispatchEvent(new CustomEvent("tasks:refresh"));
   }
@@ -169,6 +180,9 @@ export default function KanbanBoard({
     }
     if (toCol === "in_progress") {
       newColor = stickyColor;
+      newAssignee = currentUserId;
+    }
+    if (toCol === "done") {
       newAssignee = currentUserId;
     }
 
