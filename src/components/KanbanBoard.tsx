@@ -145,6 +145,21 @@ export default function KanbanBoard({
     console.error("persistTaskPatch error", primaryError);
     return false;
   }
+
+  async function persistFollowUpTaskPatch(id: string, patch: Partial<Task>) {
+    if (!id) return;
+    const keys = Object.keys(patch);
+    if (keys.length === 0) return;
+    const ok = await persistTaskPatch(id, patch);
+    if (ok) return;
+
+    if ("assigned_to" in patch) {
+      await persistTaskPatch(id, { assigned_to: patch.assigned_to ?? null });
+    }
+    if ("sticky_color" in patch) {
+      await persistTaskPatch(id, { sticky_color: patch.sticky_color ?? null });
+    }
+  }
   async function persistPositions(items: Task[]) {
     const updates = items.map((t, idx) => ({ id: t.id, position: idx }));
     const { error } = await supabase
@@ -184,6 +199,12 @@ export default function KanbanBoard({
     let success = await persistTaskPatch(id, patch);
     if (!success) {
       success = await persistTaskPatch(id, { status: to });
+      if (success) {
+        await persistFollowUpTaskPatch(id, {
+          assigned_to: patch.assigned_to ?? null,
+          sticky_color: patch.sticky_color ?? null,
+        });
+      }
     }
     if (success) {
       window.dispatchEvent(new CustomEvent("tasks:refresh"));
@@ -274,6 +295,12 @@ export default function KanbanBoard({
     });
     if (!statusSaved) {
       statusSaved = await persistTaskPatch(draggableId, { status: toCol });
+      if (statusSaved) {
+        await persistFollowUpTaskPatch(draggableId, {
+          assigned_to: moved.assigned_to ?? null,
+          sticky_color: moved.sticky_color ?? null,
+        });
+      }
     }
     if (!statusSaved) {
       await fetchTasks();
