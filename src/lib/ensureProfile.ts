@@ -10,5 +10,8 @@ export async function ensureProfile() {
     email: u.email ?? null,
     full_name: (u.user_metadata as any)?.full_name ?? null,
   };
-  await supabase.from("profiles").upsert(payload, { onConflict: "id" }); // idempotent
+  await supabase
+    .from("profiles")
+    .upsert(payload, { onConflict: "id" })
+    .select(); // idempotent
 }

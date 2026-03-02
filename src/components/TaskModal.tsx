@@ -50,7 +50,11 @@ export default function TaskModal({ isOpen, onClose, task }: TaskModalProps) {
           priority, status,
         };
         if (status === "todo") { patch.sticky_color = TODO_COLOR; patch.assigned_to = null; }
-        const { error } = await supabase.from("tasks").update(patch).eq("id", task.id);
+        const { error } = await supabase
+          .from("tasks")
+          .update(patch)
+          .eq("id", task.id)
+          .select();
         if (error) throw error;
       } else {
         const { data: s } = await supabase.auth.getSession();
@@ -64,7 +68,10 @@ export default function TaskModal({ isOpen, onClose, task }: TaskModalProps) {
           created_by: uid,
           assigned_to: null,
         };
-        const { error } = await supabase.from("tasks").insert([createRow]);
+        const { error } = await supabase
+          .from("tasks")
+          .insert([createRow])
+          .select();
         if (error) throw error;
       }
       window.dispatchEvent(new CustomEvent("tasks:refresh"));
@@ -76,7 +83,11 @@ export default function TaskModal({ isOpen, onClose, task }: TaskModalProps) {
 
   async function handleDelete() {
     if (!task?.id) return;
-    const { error } = await supabase.from("tasks").delete().eq("id", task.id);
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", task.id)
+      .select();
     if (error) alert(error.message);
     window.dispatchEvent(new CustomEvent("tasks:refresh"));
     close();

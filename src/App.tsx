@@ -76,12 +76,17 @@ export default function App() {
       return;
     }
     setUserColor(color);
-    await supabase.from("profiles").update({ color }).eq("id", uid);
+    await supabase
+      .from("profiles")
+      .update({ color })
+      .eq("id", uid)
+      .select();
     await supabase
       .from("tasks")
       .update({ sticky_color: color })
       .eq("assigned_to", uid)
-      .neq("status", "todo");
+      .neq("status", "todo")
+      .select();
     window.dispatchEvent(new CustomEvent("tasks:refresh"));
   }
 

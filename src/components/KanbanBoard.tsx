@@ -95,7 +95,11 @@ export default function KanbanBoard({
   }
 
   async function persistTaskPatch(id: string, patch: Partial<Task>) {
-    const { error } = await supabase.from("tasks").update(patch).eq("id", id);
+    const { error } = await supabase
+      .from("tasks")
+      .update(patch)
+      .eq("id", id)
+      .select();
     if (error) {
       console.error("persistTaskPatch error", error);
       return false;
@@ -106,7 +110,8 @@ export default function KanbanBoard({
     const updates = items.map((t, idx) => ({ id: t.id, position: idx }));
     const { error } = await supabase
       .from("tasks")
-      .upsert(updates, { onConflict: "id" });
+      .upsert(updates, { onConflict: "id" })
+      .select();
     if (error) console.error("persistPositions error", error);
   }
 
