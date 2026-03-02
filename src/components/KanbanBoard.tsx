@@ -116,10 +116,10 @@ export default function KanbanBoard({
   }
 
   async function persistTaskPatch(id: string, patch: Partial<Task>) {
-    const payload: Record<string, unknown> = {
-      ...patch,
-      status: patch.status ? toDbStatus(patch.status) : undefined,
-    };
+    const payload: Record<string, unknown> = { ...patch };
+    if (patch.status !== undefined) {
+      payload.status = toDbStatus(patch.status);
+    }
 
     const { error: primaryError } = await supabase
       .from("tasks")
@@ -200,9 +200,15 @@ export default function KanbanBoard({
     if (!success) {
       success = await persistTaskPatch(id, { status: to });
       if (success) {
+        const followUpPatch: Partial<Task> = {};
+        if (patch.assigned_to !== undefined) {
+          followUpPatch.assigned_to = patch.assigned_to ?? null;
+        }
+        if (patch.sticky_color !== undefined) {
+          followUpPatch.sticky_color = patch.sticky_color ?? null;
+        }
         await persistFollowUpTaskPatch(id, {
-          assigned_to: patch.assigned_to ?? null,
-          sticky_color: patch.sticky_color ?? null,
+          ...followUpPatch,
         });
       }
     }
